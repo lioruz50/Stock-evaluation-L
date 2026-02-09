@@ -43,7 +43,7 @@ def get_company_data(ticker_symbol):
         return None
 
 # --- ממשק המשתמש ---
-st.title("🚀 מודל הערכת שווי אוטומטי")
+st.title("🚀 מודל הערכת שווי ")
 
 # הזנת Ticker במרכז (נוח לטלפון)
 ticker = st.text_input("🔍 הזן סימול מניה (Ticker):", value="GOOGL").upper()

@@ -2,23 +2,23 @@ import streamlit as st
 import pandas as pd
 
 # פונקציה לבדיקת סיסמה
-def check_password():
-def password_entered():
-if st.session_state["password"] == "1234":
-st.session_state["password_correct"] = True
-del st.session_state["password"]
-else:
-st.session_state["password_correct"] = False
+#def check_password():
+#def password_entered():
+#if st.session_state["password"] == "1234":
+#st.session_state["password_correct"] = True
+#del st.session_state["password"]
+#else:
+#st.session_state["password_correct"] = False
 
-if "password_correct" not in st.session_state:
-st.text_input("אנא הזן סיסמה לגישה למערכת:", type="password", on_change=password_entered, key="password")
-return False
-elif not st.session_state["password_correct"]:
-st.text_input("סיסמה שגויה. נסה שוב:", type="password", on_change=password_entered, key="password")
-return False
-return True
+#if "password_correct" not in st.session_state:
+#st.text_input("אנא הזן סיסמה לגישה למערכת:", type="password", on_change=password_entered, key="password")
+#return False
+#elif not st.session_state["password_correct"]:
+#st.text_input("סיסמה שגויה. נסה שוב:", type="password", on_change=password_entered, key="password")
+#return False
+#return True
 
-if check_password():
+#if check_password():
 st.set_page_config(page_title="דירוג מניות 2026", layout="wide")
 st.title("📋 טבלת כדאיות השקעה - פברואר 2026")
 

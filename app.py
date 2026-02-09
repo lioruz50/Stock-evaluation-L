@@ -1,82 +1,92 @@
 import streamlit as st
+import yfinance as ticker_data
 import pandas as pd
-import numpy as np
 
-# הגדרות דף
-st.set_page_config(page_title="מחשבון שווי שוק - אקסל", layout="wide")
-st.title("📊 מודל הערכת שווי (לפי שווי שוק)")
+# פונקציה למשיכת נתונים מהאינטרנט
+def get_live_data(ticker_symbol):
+    try:
+        stock = ticker_data.Ticker(ticker_symbol)
+        info = stock.info
+        
+        # משיכת נתונים בסיסיים
+        price = info.get('currentPrice', 0)
+        market_cap = info.get('marketCap', 0) / 1e6  # המרה למיליונים
+        
+        # משיכת הכנסות (מהדוח השנתי האחרון)
+        revenue = info.get('totalRevenue', 0) / 1e6  # המרה למיליונים
+        
+        return {
+            "price": price,
+            "market_cap": market_cap,
+            "revenue": revenue,
+            "symbol": ticker_symbol
+        }
+    except Exception as e:
+        st.error(f"שגיאה במשיכת נתונים עבור {ticker_symbol}: {e}")
+        return None
 
-# --- סרגל צד: נתוני בסיס מהאקסל ---
+# --- כותרת האפליקציה ---
+st.title("🚀 מודל הערכת שווי אוטומטי")
+
+# --- סרגל צד (Sidebar) לנתוני בסיס ---
 st.sidebar.header("נתוני בסיס (2026)")
-company_name = st.sidebar.text_input("שם החברה", "Google")
-base_rev = st.sidebar.number_input("הכנסות בסיס ($ מיליונים)", value=402000)
-base_market_cap = st.sidebar.number_input("שווי שוק נוכחי ($ מיליונים)", value=4024000)
-curr_price = st.sidebar.number_input("מחיר מניה נוכחי ($)", value=333.34)
+ticker = st.sidebar.text_input("הזן סימול מניה (Ticker):", value="GOOG")
 
-st.sidebar.subheader("פרמטרים לצמיחה")
+# כפתור רענון נתונים מהרשת
+if st.sidebar.button("משוך נתונים מהאינטרנט"):
+    live_data = get_live_data(ticker)
+    if live_data:
+        st.session_state['live_data'] = live_data
+
+# שימוש בנתונים שנמשכו או בערכי ברירת מחדל
+data = st.session_state.get('live_data', {"price": 333.34, "market_cap": 4024.0, "revenue": 402.0})
+
+# תיבות קלט הניתנות לעריכה ידנית (עם ערכים אוטומטיים)
+revenue_input = st.sidebar.number_input("הכנסות בסיס ($ מיליונים)", value=float(data['revenue']))
+market_cap_input = st.sidebar.number_input("שווי שוק נוכחי ($ מיליונים)", value=float(data['market_cap']))
+price_input = st.sidebar.number_input("($) מחיר מניה נוכחי", value=float(data['price']))
+
+# --- פרמטרים לצמיחה (סליידרים) ---
+st.sidebar.header("פרמטרים לצמיחה")
 growth_rate = st.sidebar.slider("צמיחת הכנסות שנתית (%)", 0, 50, 12) / 100
-net_margin = st.sidebar.slider("שולי רווח נקי (%)", 1, 50, 35) / 100
-discount_rate = st.sidebar.slider("שיעור היוון (Discount Rate) (%)", 5, 20, 12) / 100
+profit_margin = st.sidebar.slider("שולי רווח נקי (%)", 0, 50, 35) / 100
+discount_rate = st.sidebar.slider("שיעור היוון - Discount Rate (%)", 5, 20, 12) / 100
 
-# חישוב יחס מניה לשווי שוק (כדי למצוא מחיר עתידי ללא הזנת כמות מניות)
-# שווי שוק / מחיר מניה = כמות מניות "וירטואלית"
-implied_shares = base_market_cap / curr_price
+# --- חישובים ---
+years = 5
+future_revenue = revenue_input * ((1 + growth_rate) ** years)
+future_net_profit = future_revenue * profit_margin
 
-# --- חישוב תחזית 5 שנים ---
-years = [2026, 2027, 2028, 2029, 2030]
-rev_list = []
-profit_list = []
-temp_rev = base_rev
-
-for year in years:
-    rev_list.append(temp_rev)
-    profit_list.append(temp_rev * net_margin)
-    temp_rev *= (1 + growth_rate)
-
+# יצירת טבלה לתצוגה
+st.subheader(f"תחזית הכנסות ורווח: {ticker}")
 df_forecast = pd.DataFrame({
-    "שנה": years,
-    "הכנסות ($M)": [f"{r:,.0f}" for r in rev_list],
-    "רווח נקי ($M)": [f"{p:,.0f}" for p in profit_list]
+    "שנה": [2026 + i for i in range(years + 1)],
+    "הכנסות ($M)": [round(revenue_input * ((1 + growth_rate) ** i), 2) for i in range(years + 1)],
+    "רווח נקי ($M)": [round((revenue_input * ((1 + growth_rate) ** i)) * profit_margin, 2) for i in range(years + 1)]
 })
-
-# --- ניתוח תרחישי מכפילים (בדיוק כמו באקסל) ---
-pe_scenarios = [25, 30, 35]
-scenario_results = []
-
-final_profit_2030 = profit_list[-1]
-
-for pe in pe_scenarios:
-    # 1. שווי שוק עתידי = רווח 2030 * מכפיל
-    future_mc = final_profit_2030 * pe
-    # 2. מחיר מניה עתידי (לפי היחס הנוכחי)
-    future_p = future_mc / implied_shares
-    # 3. שווי הוגן להיום (היוון)
-    fair_today = future_p / ((1 + discount_rate) ** 5)
-    # 4. מרווח ביטחון (Margin of Safety)
-    mos = ((fair_today / curr_price) - 1) * 100
-    
-    scenario_results.append({
-        "מכפיל": pe,
-        "שווי שוק 2030 ($M)": f"{future_mc:,.0f}",
-        "מחיר מניה 2030": f"${future_p:.2f}",
-        "שווי הוגן להיום": f"${fair_today:.2f}",
-        "מרווח ביטחון": f"{mos:.1f}%"
-    })
-
-# --- תצוגה ---
-st.subheader(f"📅 תחזית הכנסות ורווח: {company_name}")
 st.table(df_forecast)
 
-st.subheader("🎯 ניתוח שווי הוגן לפי תרחישים")
-st.table(pd.DataFrame(scenario_results))
+# --- ניתוח שווי הוגן ---
+st.subheader("ניתוח שווי הוגן לפי תרחישים")
+multiples = [25, 30, 35]
+scenarios = []
 
-# סיכום צבעוני
-avg_fair = np.mean([float(s["שווי הוגן להיום"].replace('$','')) for s in scenario_results])
-upside = ((avg_fair / curr_price) - 1) * 100
+for m in multiples:
+    future_market_cap = future_net_profit * m
+    # חישוב מחיר מניה עתידי (מבוסס על מספר המניות הנוכחי)
+    num_shares = market_cap_input / price_input
+    future_price = future_market_cap / num_shares
+    
+    # היוון להיום
+    fair_value_today = future_price / ((1 + discount_rate) ** years)
+    margin_of_safety = (fair_value_today - price_input) / price_input * 100
+    
+    scenarios.append({
+        "מכפיל": m,
+        "שווי שוק 2030 ($M)": f"{future_market_cap:,.0f}",
+        "מחיר מניה 2030": f"${future_price:,.2f}",
+        "שווי הוגן להיום": f"${fair_value_today:,.2f}",
+        "מרווח ביטחון": f"{margin_of_safety:.1f}%"
+    })
 
-if upside > 10:
-    st.success(f"המניה נמצאת בתמחור חסר! פוטנציאל של {upside:.1f}% למחיר השווי ההוגן (${avg_fair:.2f})")
-elif upside < -10:
-    st.error(f"המניה נראית יקרה מדי. מחיר שוק גבוה מהשווי ההוגן (${avg_fair:.2f}) ב-{abs(upside):.1f}%")
-else:
-    st.warning(f"המניה מתומחרת סביב השווי ההוגן שלה (${avg_fair:.2f})")
+st.table(pd.DataFrame(scenarios))

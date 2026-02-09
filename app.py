@@ -1,33 +1,39 @@
 import streamlit as st
 import pandas as pd
 
-# הגדרת כותרת והגדרות דף
+# הגדרות דף
 st.set_page_config(page_title="דירוג מניות 2026", layout="wide")
-st.title("📋 טבלת כדאיות השקעה - פברואר 2026")
+st.title("📋 מחשבון כדאיות השקעה אישי - פברואר 2026")
 
-# מאגר הנתונים של החברות
+# 1. יצירת סרגל צד להזנת נתונים
+st.sidebar.header("הוסף חברה לניתוח")
+new_name = st.sidebar.text_input("שם החברה (למשל: Apple)")
+new_price = st.sidebar.number_input("מחיר נוכחי ($)", min_value=0.1, value=150.0)
+new_growth = st.sidebar.slider("צמיחה צפויה (באחוזים)", 0, 100, 15) / 100
+new_pe = st.sidebar.number_input("מכפיל רווח (P/E)", min_value=1, value=25)
+
+# 2. מאגר הנתונים ההתחלתי
 all_companies = {
-    "Meta (META)": {"price": 647.63, "growth": 0.16, "margin": 0.34, "pe": 26},
-    "Amazon (AMZN)": {"price": 204.03, "growth": 0.14, "margin": 0.12, "pe": 40},
-    "Microsoft (MSFT)": {"price": 394.63, "growth": 0.13, "margin": 0.36, "pe": 32},
-    "Salesforce (CRM)": {"price": 191.35, "growth": 0.10, "margin": 0.34, "pe": 27},
-    "Tesla (TSLA)": {"price": 405.93, "growth": 0.18, "margin": 0.15, "pe": 50},
-    "AMD": {"price": 203.87, "growth": 0.25, "margin": 0.22, "pe": 35},
-    "Zeta Global (ZETA)": {"price": 18.68, "growth": 0.34, "margin": 0.15, "pe": 30},
-    "Nu Holdings (NU)": {"price": 18.16, "growth": 0.40, "margin": 0.20, "pe": 28},
-    "Ouster (OUST)": {"price": 17.30, "growth": 0.35, "margin": 0.15, "pe": 25}
+    "Meta (META)": {"price": 647.63, "growth": 0.16, "pe": 26},
+    "Amazon (AMZN)": {"price": 204.03, "growth": 0.14, "pe": 40},
+    "Microsoft (MSFT)": {"price": 394.63, "growth": 0.13, "pe": 32},
+    "Tesla (TSLA)": {"price": 405.93, "growth": 0.18, "pe": 50},
+    "Zeta Global (ZETA)": {"price": 18.68, "growth": 0.34, "pe": 30}
 }
+
+# 3. הוספת החברה החדשה למאגר (אם הוזן שם)
+if new_name:
+    all_companies[new_name] = {"price": new_price, "growth": new_growth, "pe": new_pe}
 
 results = []
 
-# לולאה שעוברת על כל החברות ומבצעת חישובים
+# 4. לולאת החישובים
 for name, d in all_companies.items():
     # נוסחת שווי הוגן ל-5 שנים (מהוון ב-12%)
-    # שימי לב: השורות הבאות מוזחות ימינה כדי להיות חלק מהלולאה
     fair_price = d["price"] * ((1 + d["growth"])**5) * (d["pe"] / 30) / ((1 + 0.12)**5)
     upside = ((fair_price / d["price"]) - 1) * 100
     
-    # קביעת הדירוג לפי הפוטנציאל
+    # קביעת הדירוג
     if upside > 30:
         score = "⭐⭐⭐⭐⭐"
     elif upside > 15:
@@ -35,7 +41,6 @@ for name, d in all_companies.items():
     else:
         score = "⭐⭐⭐"
         
-    # הוספת התוצאה לרשימה
     results.append({
         "חברה": name, 
         "מחיר נוכחי": f"${d['price']:.2f}", 
@@ -43,6 +48,9 @@ for name, d in all_companies.items():
         "דירוג": score
     })
 
-# הפיכת הרשימה לטבלה והצגתה
+# 5. הצגת הטבלה
 df = pd.DataFrame(results)
 st.table(df)
+
+# טיפ קטן למשתמש
+st.info("💡 שים לב: פוטנציאל הרווח מחושב על בסיס צמיחה ל-5 שנים והיוון של 12%.")

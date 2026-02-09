@@ -90,3 +90,24 @@ st.table(df_res.style.format({
     "שווי הוגן": "{:,.2f}$", 
     "מרווח": "{:.1f}%"
 }))
+import qrcode
+from io import BytesIO
+
+# יצירת QR Code לכתובת ה-Network URL (או כתובת הענן)
+def generate_qr(url):
+    qr = qrcode.QRCode(version=1, box_size=10, border=5)
+    qr.add_data(url)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    
+    buf = BytesIO()
+    img.save(buf)
+    return buf
+
+# הצגת ה-QR בסרגל הצד לגישה מהירה
+st.sidebar.markdown("---")
+st.sidebar.subheader("📱 פתח בטלפון")
+# במידה ואתה בענן, שים כאן את כתובת האתר שלך. במידה ובמחשב, את ה-Network URL
+app_url = "https://your-app-name.streamlit.app" 
+qr_img = generate_qr(app_url)
+st.sidebar.image(qr_img, caption="סרוק כדי לעבור לנייד")

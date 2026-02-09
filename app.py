@@ -4,7 +4,7 @@ import pandas as pd
 import qrcode
 from io import BytesIO
 
-# --- 1. הגדרת פונקציות (חייב להופיע בראש הקובץ למניעת NameError) ---
+# --- שלב 1: פונקציות עזר (חובה להגדיר בראש הקובץ) ---
 
 @st.cache_data
 def get_company_data(ticker_symbol):
@@ -30,7 +30,7 @@ def gen_qr(url):
     qr.save(buf, format="PNG")
     return buf.getvalue()
 
-# --- 2. מנגנון אבטחה ---
+# --- שלב 2: מנגנון אבטחה ---
 
 PASSWORD = "3535"
 
@@ -53,7 +53,7 @@ def check_password():
 if not check_password():
     st.stop()
 
-# --- 3. ממשק המשתמש ---
+# --- שלב 3: ממשק המשתמש ---
 
 st.title("🚀 מודל הערכת שווי")
 
@@ -65,9 +65,9 @@ if st.button("משוך נתונים עדכניים"):
         if data:
             st.session_state['stock_data'] = data
         else:
-            st.error("❌ לא נמצאו נתונים. וודא שהסימול נכון.")
+            st.error("❌ לא נמצאו נתונים עבור הסימול הזה. וודא שהוא נכון.")
 
-# נתוני ברירת מחדל (אם לא נמשכו נתונים)
+# נתוני ברירת מחדל אם המשתמש עדיין לא משך נתונים
 current_data = st.session_state.get('stock_data', {
     "name": "Google", "price": 160.0, "market_cap": 2000000.0, 
     "revenue": 307000.0, "currency": "USD", "pe_ratio": 25.0
@@ -75,42 +75,42 @@ current_data = st.session_state.get('stock_data', {
 
 st.header(f"ניתוח עבור: {current_data['name']}")
 
-# --- 4. סרגל צד לפרמטרים (עריכה ידנית) ---
+# --- שלב 4: סרגל צד לפרמטרים ---
 
 st.sidebar.header("נתוני בסיס")
-rev_input = st.sidebar.number_input(f"הכנסות במיליוני {current_data['currency']}", value=float(current_data['revenue']), step=100.0)
-price_input = st.sidebar.number_input(f"מחיר מניה ({current_data['currency']})", value=float(current_data['price']), step=0.1)
+rev_input = st.sidebar.number_input(f"הכנסות (במיליונים)", value=float(current_data['revenue']), step=100.0)
+price_input = st.sidebar.number_input(f"מחיר מניה נוכחי", value=float(current_data['price']), step=0.1)
 
 st.sidebar.header("פרמטרים לעדכון")
-growth_rate = st.sidebar.slider("צמיחה שנתית (%)", 0, 50, 12) / 100
-profit_margin = st.sidebar.slider("שולי רווח (%)", 0, 50, 25) / 100
-# הוספת אפשרות לעדכון מכפיל רווח ידנית
+growth_rate = st.sidebar.slider("צמיחה שנתית ל-5 שנים (%)", 0, 50, 12) / 100
+profit_margin = st.sidebar.slider("שולי רווח נקי (%)", 0, 50, 25) / 100
+# כאן אתה מעדכן את המכפיל ידנית
 fair_pe = st.sidebar.number_input("מכפיל רווח יעד (P/E)", value=float(current_data['pe_ratio']), step=1.0)
-discount_rate = st.sidebar.slider("שיעור היוון (%)", 5, 20, 12) / 100
+discount_rate = st.sidebar.slider("שיעור היוון (WACC) %", 5, 20, 12) / 100
 
-# --- 5. חישובים ---
+# --- שלב 5: חישובים ---
 
 years = 5
 future_rev = rev_input * ((1 + growth_rate) ** years)
 future_profit = future_rev * profit_margin
 
-# חישוב שווי הוגן להיום
+# חישוב שווי הוגן עתידי והיוונו להיום
 fair_value_future = future_profit * fair_pe
 fair_value_today = fair_value_future / ((1 + discount_rate) ** years)
 
-# גזירת מחיר מניה הוגן (יחסי לשווי השוק הנוכחי)
+# גזירת מחיר מניה הוגן יחסי
 fair_price_today = (fair_value_today / current_data['market_cap']) * current_data['price']
 mos = (fair_price_today - price_input) / price_input * 100
 
-# --- 6. תצוגת תוצאות ---
+# --- שלב 6: הצגת תוצאות ---
 
 st.subheader("📊 סיכום הערכת שווי")
 c1, c2, c3 = st.columns(3)
-c1.metric("מחיר נוכחי", f"${price_input:,.2f}")
-c2.metric("שווי הוגן (יעד)", f"${fair_price_today:,.2f}")
+c1.metric("מחיר שוק", f"${price_input:,.2f}")
+c2.metric("שווי הוגן מוערך", f"${fair_price_today:,.2f}")
 c3.metric("מרווח ביטחון", f"{mos:.1f}%")
 
 st.sidebar.markdown("---")
 # ייצור QR לקלות שימוש במובייל
-qr_img = gen_qr("https://share.streamlit.io/") # כאן כדאי לשים את הלינק שלך
+qr_img = gen_qr("https://share.streamlit.io/") # הלינק יתעדכן כשתפעיל את האפליקציה
 st.sidebar.image(qr_img, caption="סרוק למעבר למובייל")

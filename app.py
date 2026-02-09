@@ -9,12 +9,12 @@ st.title("📊 מודל הערכת שווי מניות (תחזית 5 שנים)")
 # --- סרגל צד להזנת נתונים ---
 st.sidebar.header("נתוני בסיס - Google / כללי")
 company_name = st.sidebar.text_input("שם החברה", "Google")
-base_revenue = st.sidebar.number_input("הכנסות בסיס (2026) [$ מיליונים]", value=402000)
+base_revenue = st.sidebar.number_input("הכנסות בסיס (2026) [$ מיליונים]", value=402)
 growth_rate = st.sidebar.slider("צמיחת הכנסות שנתית [%]", 0, 50, 12) / 100
 net_margin = st.sidebar.slider("שולי רווח נקי [%]", 1, 50, 35) / 100
 discount_rate = st.sidebar.slider("שיעור היוון (Discount Rate) [%]", 5, 20, 12) / 100
 current_price = st.sidebar.number_input("מחיר מניה נוכחי [$]", value=333.34)
-shares_outstanding = st.sidebar.number_input("שווי שוק נוכחי [מיליוני $]", value=4024000) / current_price # חישוב כמות מניות
+shares_outstanding = st.sidebar.number_input("שווי שוק נוכחי [מיליוני $]", value=402) / current_price # חישוב כמות מניות
 
 st.sidebar.subheader("תרחישי מכפיל רווח (P/E)")
 pe_low = st.sidebar.number_input("מכפיל נמוך", value=25)

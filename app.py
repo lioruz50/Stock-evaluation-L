@@ -4,7 +4,7 @@ import pandas as pd
 import qrcode
 from io import BytesIO
 
-# --- 1. פונקציות עזר (חייבות להופיע ראשונות) ---
+# --- 1. הגדרת פונקציות (חייב להופיע לפני השימוש בהן) ---
 
 @st.cache_data(ttl=3600)
 def get_company_data(ticker_symbol):
@@ -20,65 +20,77 @@ def get_company_data(ticker_symbol):
             "sector": info.get('sector', 'N/A'),
             "pe_ratio": info.get('trailingPE', 0.0)
         }
-    except: return None
+    except:
+        return None
 
 @st.cache_data(ttl=3600)
 def get_peers_data(ticker_symbol):
     try:
         stock = yf.Ticker(ticker_symbol)
         peers = stock.peers
-        if not peers: return None
+        if not peers or len(peers) == 0:
+            return None
         
         comparison_list = []
+        # לוקחים את המניה שנבחרה + עד 4 מתחרים
         for t in [ticker_symbol] + peers[:4]:
             t_info = yf.Ticker(t).info
             comparison_list.append({
                 "סימול": t,
                 "שם": t_info.get('shortName', t),
-                "P/E": t_info.get('trailingPE', 0.0),
+                "מכפיל P/E": t_info.get('trailingPE', 0.0),
                 "שווי שוק (B)": (t_info.get('marketCap', 0.0) / 1_000_000_000)
             })
         return pd.DataFrame(comparison_list)
-    except: return None
+    except:
+        return None
 
-# --- 2. לוגיקת אבטחה וכניסה ---
+# --- 2. מנגנון אבטחה ---
 
 PASSWORD = "3535"
 if "password_correct" not in st.session_state:
     st.session_state["password_correct"] = False
 
 if not st.session_state["password_correct"]:
-    st.title("🔒 כניסה")
-    pwd = st.text_input("סיסמה:", type="password")
+    st.title("🔒 כניסה למערכת")
+    pwd_input = st.text_input("הזן סיסמה:", type="password")
     if st.button("כניסה"):
-        if pwd == PASSWORD:
+        if pwd_input == PASSWORD:
             st.session_state["password_correct"] = True
             st.rerun()
-        else: st.error("שגויה")
+        else:
+            st.error("❌ סיסמה שגויה")
     st.stop()
 
-# --- 3. ממשק המשתמש והחישובים ---
+# --- 3. ממשק משתמש (UI) ---
 
 st.title("🚀 מודל הערכת שווי והשוואה")
 
-ticker = st.text_input("🔍 הזן סימול (Ticker):", value="GOOGL").upper()
+ticker = st.text_input("🔍 הזן סימול מניה (Ticker):", value="GOOGL").upper()
 
 if st.button("משוך נתונים"):
-    data = get_company_data(ticker)
-    if data: st.session_state['stock_data'] = data
-    else: st.error("לא נמצאו נתונים")
+    with st.spinner('מושך נתונים...'):
+        data = get_company_data(ticker)
+        if data:
+            st.session_state['stock_data'] = data
+        else:
+            st.error("לא נמצאו נתונים עבור הסימול הזה.")
 
-# נתונים נוכחיים
-stock_data = st.session_state.get('stock_data')
-
-if stock_data:
-    st.subheader(f"ניתוח עבור {stock_data['name']}")
+# הצגת נתונים והשוואה אם קיימים ב-session_state
+if 'stock_data' in st.session_state:
+    data = st.session_state['stock_data']
+    st.header(f"ניתוח עבור: {data['name']}")
     
-    # --- השוואת מתחרים (כאן הייתה השגיאה) ---
+    # הצגת טבלת מתחרים
     st.markdown("---")
-    st.subheader("👥 השוואה למתחרים")
+    st.subheader("👥 השוואה למתחרים בתעשייה")
+    
     peers_df = get_peers_data(ticker)
+    
     if peers_df is not None:
-        st.table(peers_df.style.format({"P/E": "{:.2f}", "שווי שוק (B)": "${:.2f}B"}))
+        st.table(peers_df.style.format({
+            "מכפיל P/E": "{:.2f}",
+            "שווי שוק (B)": "${:.2f}B"
+        }))
     else:
-        st.info("לא נמצאו מתחרים ישירים להשוואה.")
+        st.info("לא נמצאו מתחרים ישירים להשוואה (Peers) במאגר הנתונים.")

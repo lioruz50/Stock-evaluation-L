@@ -3,66 +3,80 @@ import pandas as pd
 import numpy as np
 
 # הגדרות דף
-st.set_page_config(page_title="מחשבון הערכת שווי DCF", layout="wide")
-st.title("📊 מודל הערכת שווי מניות (תחזית 5 שנים)")
+st.set_page_config(page_title="מחשבון שווי שוק - אקסל", layout="wide")
+st.title("📊 מודל הערכת שווי (לפי שווי שוק)")
 
-# --- סרגל צד להזנת נתונים ---
-st.sidebar.header("נתוני בסיס - Google / כללי")
+# --- סרגל צד: נתוני בסיס מהאקסל ---
+st.sidebar.header("נתוני בסיס (2026)")
 company_name = st.sidebar.text_input("שם החברה", "Google")
-base_revenue = st.sidebar.number_input("הכנסות בסיס (2026) [$ מיליונים]", value=402)
-growth_rate = st.sidebar.slider("צמיחת הכנסות שנתית [%]", 0, 50, 12) / 100
-net_margin = st.sidebar.slider("שולי רווח נקי [%]", 1, 50, 35) / 100
-discount_rate = st.sidebar.slider("שיעור היוון (Discount Rate) [%]", 5, 20, 12) / 100
-current_price = st.sidebar.number_input("מחיר מניה נוכחי [$]", value=333.34)
-shares_outstanding = st.sidebar.number_input("שווי שוק נוכחי [מיליוני $]", value=402) / current_price # חישוב כמות מניות
+base_rev = st.sidebar.number_input("הכנסות בסיס ($ מיליונים)", value=402000)
+base_market_cap = st.sidebar.number_input("שווי שוק נוכחי ($ מיליונים)", value=4024000)
+curr_price = st.sidebar.number_input("מחיר מניה נוכחי ($)", value=333.34)
 
-st.sidebar.subheader("תרחישי מכפיל רווח (P/E)")
-pe_low = st.sidebar.number_input("מכפיל נמוך", value=25)
-pe_med = st.sidebar.number_input("מכפיל ממוצע", value=30)
-pe_high = st.sidebar.number_input("מכפיל גבוה", value=35)
+st.sidebar.subheader("פרמטרים לצמיחה")
+growth_rate = st.sidebar.slider("צמיחת הכנסות שנתית (%)", 0, 50, 12) / 100
+net_margin = st.sidebar.slider("שולי רווח נקי (%)", 1, 50, 35) / 100
+discount_rate = st.sidebar.slider("שיעור היוון (Discount Rate) (%)", 5, 20, 12) / 100
 
-# --- חישוב תחזית רב-שנתית ---
-years = [2026, 2027, 2028, 2029, 2030, "2030 (סוף שנה)"]
-projections = []
-rev = base_revenue
+# חישוב יחס מניה לשווי שוק (כדי למצוא מחיר עתידי ללא הזנת כמות מניות)
+# שווי שוק / מחיר מניה = כמות מניות "וירטואלית"
+implied_shares = base_market_cap / curr_price
 
-for i in range(5):
-    profit = rev * net_margin
-    projections.append({
-        "שנה": 2026 + i,
-        "הכנסות ($M)": round(rev),
-        "שולי רווח": f"{net_margin*100}%",
-        "רווח נקי ($M)": round(profit)
-    })
-    rev *= (1 + growth_rate)
+# --- חישוב תחזית 5 שנים ---
+years = [2026, 2027, 2028, 2029, 2030]
+rev_list = []
+profit_list = []
+temp_rev = base_rev
 
-# נתוני שנה אחרונה (טרמינלית)
-final_profit = projections[-1]["רווח נקי ($M)"]
+for year in years:
+    rev_list.append(temp_rev)
+    profit_list.append(temp_rev * net_margin)
+    temp_rev *= (1 + growth_rate)
 
-# --- חישוב תרחישי שווי ---
-scenarios = []
-for pe in [pe_low, pe_med, pe_high]:
-    future_market_cap = final_profit * pe
-    future_price = future_market_cap / shares_outstanding
-    # היוון להיום: PV = FV / (1 + r)^n
-    fair_price_today = future_price / ((1 + discount_rate) ** 5)
-    margin_of_safety = ((fair_price_today / current_price) - 1) * 100
+df_forecast = pd.DataFrame({
+    "שנה": years,
+    "הכנסות ($M)": [f"{r:,.0f}" for r in rev_list],
+    "רווח נקי ($M)": [f"{p:,.0f}" for p in profit_list]
+})
+
+# --- ניתוח תרחישי מכפילים (בדיוק כמו באקסל) ---
+pe_scenarios = [25, 30, 35]
+scenario_results = []
+
+final_profit_2030 = profit_list[-1]
+
+for pe in pe_scenarios:
+    # 1. שווי שוק עתידי = רווח 2030 * מכפיל
+    future_mc = final_profit_2030 * pe
+    # 2. מחיר מניה עתידי (לפי היחס הנוכחי)
+    future_p = future_mc / implied_shares
+    # 3. שווי הוגן להיום (היוון)
+    fair_today = future_p / ((1 + discount_rate) ** 5)
+    # 4. מרווח ביטחון (Margin of Safety)
+    mos = ((fair_today / curr_price) - 1) * 100
     
-    scenarios.append({
-        "תרחיש מכפיל": pe,
-        "שווי שוק עתידי ($M)": f"{future_market_cap:,.0f}",
-        "מחיר מניה 2030": f"${future_price:.2f}",
-        "שווי הוגן להיום": f"${fair_price_today:.2f}",
-        "מרווח ביטחון / פוטנציאל": f"{margin_of_safety:.1f}%"
+    scenario_results.append({
+        "מכפיל": pe,
+        "שווי שוק 2030 ($M)": f"{future_mc:,.0f}",
+        "מחיר מניה 2030": f"${future_p:.2f}",
+        "שווי הוגן להיום": f"${fair_today:.2f}",
+        "מרווח ביטחון": f"{mos:.1f}%"
     })
 
-# --- הצגת הנתונים ---
-st.subheader(f"📅 תחזית צמיחה עבור {company_name}")
-st.table(pd.DataFrame(projections).set_index("שנה"))
+# --- תצוגה ---
+st.subheader(f"📅 תחזית הכנסות ורווח: {company_name}")
+st.table(df_forecast)
 
-st.subheader("🎯 ניתוח שווי הוגן (לפי תרחישי מכפילים)")
-st.table(pd.DataFrame(scenarios))
+st.subheader("🎯 ניתוח שווי הוגן לפי תרחישים")
+st.table(pd.DataFrame(scenario_results))
 
-# --- סיכום ויזואלי ---
-avg_fair_price = np.mean([float(s["שווי הוגן להיום"].replace('$','')) for s in scenarios])
-st.info(f"💡 **סיכום:** השווי ההוגן הממוצע לפי המודל הוא **${avg_fair_price:.2f}**. בהשוואה למחיר השוק (${current_price}), זה מייצג פוטנציאל של **{((avg_fair_price/current_price)-1)*100:.1f}%**.")
+# סיכום צבעוני
+avg_fair = np.mean([float(s["שווי הוגן להיום"].replace('$','')) for s in scenario_results])
+upside = ((avg_fair / curr_price) - 1) * 100
+
+if upside > 10:
+    st.success(f"המניה נמצאת בתמחור חסר! פוטנציאל של {upside:.1f}% למחיר השווי ההוגן (${avg_fair:.2f})")
+elif upside < -10:
+    st.error(f"המניה נראית יקרה מדי. מחיר שוק גבוה מהשווי ההוגן (${avg_fair:.2f}) ב-{abs(upside):.1f}%")
+else:
+    st.warning(f"המניה מתומחרת סביב השווי ההוגן שלה (${avg_fair:.2f})")

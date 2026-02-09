@@ -1,56 +1,68 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 
 # הגדרות דף
-st.set_page_config(page_title="דירוג מניות 2026", layout="wide")
-st.title("📋 מחשבון כדאיות השקעה אישי - פברואר 2026")
+st.set_page_config(page_title="מחשבון הערכת שווי DCF", layout="wide")
+st.title("📊 מודל הערכת שווי מניות (תחזית 5 שנים)")
 
-# 1. יצירת סרגל צד להזנת נתונים
-st.sidebar.header("הוסף חברה לניתוח")
-new_name = st.sidebar.text_input("שם החברה (למשל: Apple)")
-new_price = st.sidebar.number_input("מחיר נוכחי ($)", min_value=0.1, value=150.0)
-new_growth = st.sidebar.slider("צמיחה צפויה (באחוזים)", 0, 100, 15) / 100
-new_pe = st.sidebar.number_input("מכפיל רווח (P/E)", min_value=1, value=25)
+# --- סרגל צד להזנת נתונים ---
+st.sidebar.header("נתוני בסיס - Google / כללי")
+company_name = st.sidebar.text_input("שם החברה", "Google")
+base_revenue = st.sidebar.number_input("הכנסות בסיס (2026) [$ מיליונים]", value=402000)
+growth_rate = st.sidebar.slider("צמיחת הכנסות שנתית [%]", 0, 50, 12) / 100
+net_margin = st.sidebar.slider("שולי רווח נקי [%]", 1, 50, 35) / 100
+discount_rate = st.sidebar.slider("שיעור היוון (Discount Rate) [%]", 5, 20, 12) / 100
+current_price = st.sidebar.number_input("מחיר מניה נוכחי [$]", value=333.34)
+shares_outstanding = st.sidebar.number_input("שווי שוק נוכחי [מיליוני $]", value=4024000) / current_price # חישוב כמות מניות
 
-# 2. מאגר הנתונים ההתחלתי
-all_companies = {
-    "Meta (META)": {"price": 647.63, "growth": 0.16, "pe": 26},
-    "Amazon (AMZN)": {"price": 204.03, "growth": 0.14, "pe": 40},
-    "Microsoft (MSFT)": {"price": 394.63, "growth": 0.13, "pe": 32},
-    "Tesla (TSLA)": {"price": 405.93, "growth": 0.18, "pe": 50},
-    "Zeta Global (ZETA)": {"price": 18.68, "growth": 0.34, "pe": 30}
-}
+st.sidebar.subheader("תרחישי מכפיל רווח (P/E)")
+pe_low = st.sidebar.number_input("מכפיל נמוך", value=25)
+pe_med = st.sidebar.number_input("מכפיל ממוצע", value=30)
+pe_high = st.sidebar.number_input("מכפיל גבוה", value=35)
 
-# 3. הוספת החברה החדשה למאגר (אם הוזן שם)
-if new_name:
-    all_companies[new_name] = {"price": new_price, "growth": new_growth, "pe": new_pe}
+# --- חישוב תחזית רב-שנתית ---
+years = [2026, 2027, 2028, 2029, 2030, "2030 (סוף שנה)"]
+projections = []
+rev = base_revenue
 
-results = []
+for i in range(5):
+    profit = rev * net_margin
+    projections.append({
+        "שנה": 2026 + i,
+        "הכנסות ($M)": round(rev),
+        "שולי רווח": f"{net_margin*100}%",
+        "רווח נקי ($M)": round(profit)
+    })
+    rev *= (1 + growth_rate)
 
-# 4. לולאת החישובים
-for name, d in all_companies.items():
-    # נוסחת שווי הוגן ל-5 שנים (מהוון ב-12%)
-    fair_price = d["price"] * ((1 + d["growth"])**5) * (d["pe"] / 30) / ((1 + 0.12)**5)
-    upside = ((fair_price / d["price"]) - 1) * 100
+# נתוני שנה אחרונה (טרמינלית)
+final_profit = projections[-1]["רווח נקי ($M)"]
+
+# --- חישוב תרחישי שווי ---
+scenarios = []
+for pe in [pe_low, pe_med, pe_high]:
+    future_market_cap = final_profit * pe
+    future_price = future_market_cap / shares_outstanding
+    # היוון להיום: PV = FV / (1 + r)^n
+    fair_price_today = future_price / ((1 + discount_rate) ** 5)
+    margin_of_safety = ((fair_price_today / current_price) - 1) * 100
     
-    # קביעת הדירוג
-    if upside > 30:
-        score = "⭐⭐⭐⭐⭐"
-    elif upside > 15:
-        score = "⭐⭐⭐⭐"
-    else:
-        score = "⭐⭐⭐"
-        
-    results.append({
-        "חברה": name, 
-        "מחיר נוכחי": f"${d['price']:.2f}", 
-        "פוטנציאל רווח": f"{upside:.1f}%", 
-        "דירוג": score
+    scenarios.append({
+        "תרחיש מכפיל": pe,
+        "שווי שוק עתידי ($M)": f"{future_market_cap:,.0f}",
+        "מחיר מניה 2030": f"${future_price:.2f}",
+        "שווי הוגן להיום": f"${fair_price_today:.2f}",
+        "מרווח ביטחון / פוטנציאל": f"{margin_of_safety:.1f}%"
     })
 
-# 5. הצגת הטבלה
-df = pd.DataFrame(results)
-st.table(df)
+# --- הצגת הנתונים ---
+st.subheader(f"📅 תחזית צמיחה עבור {company_name}")
+st.table(pd.DataFrame(projections).set_index("שנה"))
 
-# טיפ קטן למשתמש
-st.info("💡 שים לב: פוטנציאל הרווח מחושב על בסיס צמיחה ל-5 שנים והיוון של 12%.")
+st.subheader("🎯 ניתוח שווי הוגן (לפי תרחישי מכפילים)")
+st.table(pd.DataFrame(scenarios))
+
+# --- סיכום ויזואלי ---
+avg_fair_price = np.mean([float(s["שווי הוגן להיום"].replace('$','')) for s in scenarios])
+st.info(f"💡 **סיכום:** השווי ההוגן הממוצע לפי המודל הוא **${avg_fair_price:.2f}**. בהשוואה למחיר השוק (${current_price}), זה מייצג פוטנציאל של **{((avg_fair_price/current_price)-1)*100:.1f}%**.")

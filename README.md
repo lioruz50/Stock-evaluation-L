@@ -1,2 +1,2 @@
-# Stock-evaluation-
+# Stock-evaluation
 Stocks valuation tool

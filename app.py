@@ -1,109 +1,70 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import qrcode
-from io import BytesIO
 
-# --- הגדרות אבטחה ---
-PASSWORD = "3535" # שנה לסיסמה המועדפת עליך
-
-def check_password():
-    if "password_correct" not in st.session_state:
-        st.session_state["password_correct"] = False
-    if st.session_state["password_correct"]:
-        return True
-
-    st.title("🔒 כניסה למערכת")
-    pwd_input = st.text_input("הזן סיסמה:", type="password")
-    if st.button("כניסה"):
-        if pwd_input == PASSWORD:
-            st.session_state["password_correct"] = True
-            st.rerun()
-        else:
-            st.error("❌ סיסמה שגויה")
-    return False
-
-if not check_password():
-    st.stop()
-
-# --- פונקציית משיכת נתונים (מעובד למיליונים) ---
-@st.cache_data
-def get_company_data(ticker_symbol):
+# --- פונקציית השוואת מתחרים ---
+def get_peers_data(ticker_symbol):
     try:
         stock = yf.Ticker(ticker_symbol)
-        info = stock.info
-        return {
-            "name": info.get('longName', ticker_symbol),
-            "price": info.get('currentPrice', 0.0),
-            "market_cap": info.get('marketCap', 0.0) / 1_000_000, # המרה למיליוני דולרים
-            "revenue": info.get('totalRevenue', 0.0) / 1_000_000,    # המרה למיליוני דולרים
-            "currency": info.get('currency', 'USD')
-        }
-    except Exception:
+        # ניסיון למשוך רשימת מתחרים (לא תמיד זמין לכל המניות)
+        peers = stock.peers
+        
+        # אם אין רשימת מתחרים, נשתמש ברשימה גנרית כגיבוי (או נחזיר ריק)
+        if not peers or len(peers) == 0:
+            return None
+        
+        comparison_list = []
+        # נוסיף את המניה המקורית לרשימה להשוואה
+        all_tickers = [ticker_symbol] + peers[:4] # מקבילים + 4 מתחרים ראשונים
+        
+        for t in all_tickers:
+            t_stock = yf.Ticker(t)
+            t_info = t_stock.info
+            comparison_list.append({
+                "סימול": t,
+                "שם": t_info.get('shortName', t),
+                "מכפיל רווח (P/E)": t_info.get('trailingPE', 0.0),
+                "מכפיל הכנסות (P/S)": t_info.get('priceToSalesTrailing12Months', 0.0),
+                "שווי שוק (B)": (t_info.get('marketCap', 0.0) / 1_000_000_000),
+                "תשואת דיבידנד (%)": (t_info.get('dividendYield', 0.0) or 0) * 100
+            })
+        return pd.DataFrame(comparison_list)
+    except:
         return None
 
-# --- ממשק המשתמש ---
-st.title("🚀 מודל הערכת שווי ")
+# --- בתוך ממשק המשתמש (אחרי הצגת תוצאות הערכת השווי) ---
 
-# הזנת Ticker במרכז (נוח לטלפון)
-ticker = st.text_input("🔍 הזן סימול מניה (Ticker):", value="GOOGL").upper()
+st.markdown("---")
+st.subheader("👥 השוואה למתחרים בתעשייה")
 
-if st.button("משוך נתונים עדכניים"):
-    with st.spinner('מושך נתונים...'):
-        data = get_company_data(ticker)
-        if data:
-            st.session_state['stock_data'] = data
-        else:
-            st.error("לא נמצאו נתונים. וודא שהסימול נכון.")
+with st.spinner('מנתח מתחרים בסקטור...'):
+    peers_df = get_peers_data(ticker)
+    
+    if peers_df is not None:
+        # עיצוב הטבלה להדגשת המניה שנבחרה
+        def highlight_ticker(s):
+            return ['background-color: #1f77b4; color: white' if s.סימול == ticker else '' for _ in s]
+        
+        st.write("נתונים אלו עוזרים להבין אם מכפיל היעד שבחרת הגיוני ביחס למתחרים:")
+        
+        styled_df = peers_df.style.format({
+            "מכפיל רווח (P/E)": "{:.2f}",
+            "מכפיל הכנסות (P/S)": "{:.2f}",
+            "שווי שוק (B)": "${:.2f}B",
+            "תשואת דיבידנד (%)": "{:.2f}%"
+        }).apply(highlight_ticker, axis=1)
+        
+        st.table(styled_df)
+        
+        # תובנה אוטומטית
+        avg_pe = peers_df["מכפיל רווח (P/E)"].replace(0, pd.NA).dropna().mean()
+        st.caption(f"💡 מכפיל ה-P/E הממוצע בקבוצת המתחרים הזו הוא **{avg_pe:.2f}**.")
+    else:
+        st.warning("לא נמצאו נתוני מתחרים ישירים עבור סימול זה.")
 
-# נתוני ברירת מחדל
-current_data = st.session_state.get('stock_data', {"name": "Google", "price": 160.0, "market_cap": 2000000.0, "revenue": 307000.0, "currency": "USD"})
-
-st.header(f"ניתוח עבור: {current_data['name']}")
-
-# --- סרגל צד לפרמטרים ---
-st.sidebar.header("נתוני בסיס (עריכה ידנית)")
-rev_input = st.sidebar.number_input(f"הכנסות במיליוני {current_data['currency']}", value=float(current_data['revenue']), step=100.0)
-mc_input = st.sidebar.number_input(f"שווי שוק במיליוני {current_data['currency']}", value=float(current_data['market_cap']), step=1000.0)
-price_input = st.sidebar.number_input(f"מחיר מניה ({current_data['currency']})", value=float(current_data['price']), step=0.1)
-
-st.sidebar.header("פרמטרים לצמיחה")
-growth_rate = st.sidebar.slider("צמיחת הכנסות שנתית (%)", 0, 50, 12) / 100
-profit_margin = st.sidebar.slider("שולי רווח נקי (%)", 0, 50, 25) / 100
-discount_rate = st.sidebar.slider("שיעור היוון (%)", 5, 20, 12) / 100
-
-# --- חישובים ---
-years = 5
-future_rev = rev_input * ((1 + growth_rate) ** years)
-future_profit = future_rev * profit_margin
-num_shares = mc_input / price_input
-
-# תרחישים
-multiples = [25, 30, 35]
-results = []
-for m in multiples:
-    f_mc = future_profit * m
-    f_price = f_mc / num_shares
-    fair_today = f_price / ((1 + discount_rate) ** years)
-    mos = (fair_today - price_input) / price_input * 100
-    results.append({"מכפיל": m, "מחיר 2030": f_price, "שווי הוגן": fair_today, "מרווח": mos})
-
-# --- תצוגת תוצאות ---
-st.subheader("📊 סיכום הערכת שווי")
-c1, c2, c3 = st.columns(3)
-c1.metric("מחיר נוכחי", f"${price_input:,.2f}")
-c2.metric("שווי הוגן (מכפיל 30)", f"${results[1]['שווי הוגן']:,.2f}")
-c3.metric("מרווח ביטחון", f"{results[1]['מרווח']:.1f}%")
-
-st.table(pd.DataFrame(results).style.format({"מחיר 2030": "{:,.2f}$", "שווי הוגן": "{:,.2f}$", "מרווח": "{:.1f}%"}))
-
-# --- QR Code בסוף סרגל הצד ---
-def gen_qr(url):
-    qr = qrcode.make(url)
-    buf = BytesIO()
-    qr.save(buf)
-    return buf
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("📱 פתח בטלפון")
-st.sidebar.image(gen_qr("https://your-app-link.streamlit.app"), caption="סרוק למעבר מהיר")
+# --- עדכון קטן לסרגל הצד (אופציונלי) ---
+if peers_df is not None:
+    avg_pe_val = peers_df["מכפיל רווח (P/E)"].replace(0, pd.NA).dropna().mean()
+    if st.sidebar.button("השתמש במכפיל ממוצע של המתחרים"):
+        st.session_state['fair_multiple'] = avg_pe_val
+        st.rerun()

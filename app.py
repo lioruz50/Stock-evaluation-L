@@ -1,29 +1,27 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import qrcode
-from io import BytesIO
 
-# --- 1. הגדרות דף ועיצוב ---
+# --- 1. הגדרות דף ---
 st.set_page_config(page_title="Value Model", layout="wide")
 
+# שימוש בעיצוב רקע עדין ונעים לעיניים
 st.markdown("""
-<style>
-    .stApp { background-color: #f1f3f6; }
-</style>
-""", unsafe_allow_value=True)
+    <style>
+    .stApp {
+        background-color: #f8f9fa;
+    }
+    </style>
+    """, unsafe_allow_value=True)
 
 # --- 2. פונקציות עזר ---
-def format_large_number(n):
-    if n >= 1000: return f"{n/1000:.2f}B"
-    return f"{n:.2f}M"
-
 @st.cache_data
 def get_company_data(ticker_symbol):
     try:
         stock = yf.Ticker(ticker_symbol)
         info = stock.info
-        if not info or 'currentPrice' not in info: return None
+        if not info or 'currentPrice' not in info:
+            return None
         return {
             "name": info.get('longName', ticker_symbol),
             "price": info.get('currentPrice', 0.0),
@@ -31,21 +29,16 @@ def get_company_data(ticker_symbol):
             "revenue": info.get('totalRevenue', 0.0) / 1_000_000,
             "pe_ratio": info.get('trailingPE', 25.0)
         }
-    except: return None
-
-def gen_qr(url):
-    qr = qrcode.make(url)
-    buf = BytesIO()
-    qr.save(buf, format="PNG")
-    return buf.getvalue()
+    except:
+        return None
 
 # --- 3. אבטחה ---
 if "password_correct" not in st.session_state:
     st.session_state["password_correct"] = False
 
 if not st.session_state["password_correct"]:
-    st.title("🔒 כניסה")
-    pwd = st.text_input("סיסמה:", type="password")
+    st.title("🔒 כניסה למערכת")
+    pwd = st.text_input("הזן סיסמה:", type="password")
     if st.button("כניסה") and pwd == "3535":
         st.session_state["password_correct"] = True
         st.rerun()
@@ -57,11 +50,14 @@ st.title("📊 מודל הערכת שווי והמלצת קנייה")
 ticker = st.text_input("🔍 (Ticker) הזן סימול מניה:", value="META").upper()
 
 if st.button("משוך נתונים עדכניים"):
-    data = get_company_data(ticker)
-    if data: st.session_state['stock_data'] = data
-    else: st.error("לא נמצאו נתונים")
+    with st.spinner('מושך נתונים...'):
+        data = get_company_data(ticker)
+        if data:
+            st.session_state['stock_data'] = data
+        else:
+            st.error("לא נמצאו נתונים עבור הסימול שהוזן.")
 
-# נתוני ברירת מחדל מותאמים לאקסל שלך
+# נתוני ברירת מחדל (Meta לפי האקסל שלך)
 current_data = st.session_state.get('stock_data', {
     "name": "Meta Platforms, Inc.", "price": 649.5, "market_cap": 1637000.0, 
     "revenue": 200000.0, "pe_ratio": 25.0
@@ -69,7 +65,7 @@ current_data = st.session_state.get('stock_data', {
 
 st.subheader(f"ניתוח עבור: {current_data['name']}")
 
-# --- 5. סרגל צד (דיפולטים לפי האקסל) ---
+# --- 5. סרגל צד (הגדרות האקסל) ---
 st.sidebar.header("⚙️ פרמטרים להערכה")
 target_pe = st.sidebar.number_input("מכפיל רווח יעד (P/E)", value=float(current_data['pe_ratio']))
 growth_rate = st.sidebar.slider("צמיחה שנתית (%)", 0, 50, 14) / 100 # 14% לפי האקסל
@@ -88,6 +84,7 @@ future_rev = rev_input * ((1 + growth_rate) ** years)
 future_profit = future_rev * profit_margin
 num_shares = mc_input / price_input if price_input > 0 else 1
 
+# תרחיש ניטרלי (לפי המכפיל שנבחר)
 f_mc_neutral = future_profit * target_pe
 f_price_neutral = f_mc_neutral / num_shares
 fair_today = f_price_neutral / ((1 + discount_rate) ** years)
@@ -95,19 +92,23 @@ mos = (fair_today - price_input) / price_input * 100
 cagr_neutral = ((f_price_neutral / price_input) ** (1/years) - 1) * 100 if price_input > 0 else 0
 
 # המלצה
-if mos > 15: rec, col = "✅ קנייה חזקה (Strong Buy)", "green"
-elif mos > 0: rec, col = "🟡 החזק/קנייה מתונה (Hold/Buy)", "orange"
-else: rec, col = "❌ מכירה/המתנה (Overvalued)", "red"
+if mos > 15:
+    recommendation, rec_color = "✅ קנייה חזקה (Strong Buy)", "green"
+elif mos > 0:
+    recommendation, rec_color = "🟡 החזק/קנייה מתונה (Hold/Buy)", "orange"
+else:
+    recommendation, rec_color = "❌ מכירה/המתנה (Overvalued)", "red"
 
-# --- 7. תצוגה ---
-c1, c2, c3 = st.columns(3)
-c1.metric("מחיר נוכחי", f"${price_input:,.2f}")
-c2.metric("מחיר יעד 2030", f"${f_price_neutral:,.2f}", f"{cagr_neutral:.1f}% CAGR")
-c3.metric("שווי הוגן היום", f"${fair_today:,.2f}", f"{mos:.1f}% Margin")
+# --- 7. תצוגת תוצאות מרכזית ---
+col1, col2, col3 = st.columns(3)
+col1.metric("מחיר נוכחי", f"${price_input:,.2f}")
+col2.metric("מחיר יעד 2030", f"${f_price_neutral:,.2f}", f"{cagr_neutral:.1f}% CAGR")
+col3.metric("שווי הוגן היום", f"${fair_today:,.2f}", f"{mos:.1f}% Margin")
 
-st.markdown(f"### המלצה: :{col}[{rec}]")
+st.markdown(f"### המלצה: :{rec_color}[{recommendation}]")
 
-# טבלת תרחישים
+# טבלת תרחישים (ללא שורת ה-Total Profit שהוסרה)
+st.write("---")
 multiples = [target_pe * 0.8, target_pe, target_pe * 1.2]
 results = []
 for m in multiples:
@@ -117,8 +118,7 @@ for m in multiples:
         "תרחיש": "שמרני" if m < target_pe else ("אופטימי" if m > target_pe else "ניטרלי"),
         "מכפיל": round(m, 1),
         "מחיר צפוי": f"{f_p:,.2f}$",
-        "CAGR": f"{c:.1f}%"
+        "תשואה שנתית (CAGR)": f"{c:.1f}%"
     })
 
 st.table(pd.DataFrame(results))
-st.sidebar.image(gen_qr("https://share.streamlit.io/"), caption="סרוק למובייל")

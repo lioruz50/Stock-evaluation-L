@@ -4,16 +4,8 @@ import pandas as pd
 import qrcode
 from io import BytesIO
 
-# --- 1. הגדרות עיצוב (צבע רקע נעים וסגנון) ---
+# --- 1. הגדרות דף בסיסיות (ללא CSS מורכב למניעת שגיאות) ---
 st.set_page_config(page_title="Value Model", layout="wide")
-
-# עיצוב CSS פשוט ובטוח למניעת שגיאות שרת
-st.markdown("""
-<style>
-    .stApp { background-color: #f1f3f6; }
-    h1, h2, h3 { color: #1e3a8a; }
-</style>
-""", unsafe_allow_value=True)
 
 # --- 2. פונקציות עזר ---
 def format_large_number(n):
@@ -62,7 +54,7 @@ if not st.session_state["password_correct"]:
     st.stop()
 
 # --- 4. ממשק ראשי ---
-st.title("📊 מודל הערכת שווי והמלצת קנייה")
+st.title("📈 מודל הערכת שווי והמלצת קנייה")
 
 ticker = st.text_input("🔍 הזן סימול מניה (Ticker):", value="META").upper()
 
@@ -72,7 +64,7 @@ if st.button("משוך נתונים עדכניים"):
         if data:
             st.session_state['stock_data'] = data
         else:
-            st.error("❌ לא נמצאו נתונים.")
+            st.error("❌ לא נמצאו נתונים. וודא שהסימול נכון.")
 
 # נתוני ברירת מחדל (Meta לפי האקסל שלך)
 current_data = st.session_state.get('stock_data', {
@@ -108,16 +100,13 @@ fair_today = f_price_neutral / ((1 + discount_rate) ** years)
 mos = (fair_today - price_input) / price_input * 100
 cagr_neutral = ((f_price_neutral / price_input) ** (1/years) - 1) * 100 if price_input > 0 else 0
 
-# המלצה
+# המלצה פשוטה
 if mos > 15:
     recommendation = "✅ קנייה חזקה (Strong Buy)"
-    rec_color = "green"
 elif mos > 0:
     recommendation = "🟡 החזק/קנייה מתונה (Hold/Buy)"
-    rec_color = "orange"
 else:
     recommendation = "❌ מכירה/המתנה (Overvalued)"
-    rec_color = "red"
 
 # --- 7. תצוגת תוצאות ---
 col1, col2, col3 = st.columns(3)
@@ -125,7 +114,7 @@ col1.metric("מחיר נוכחי", f"${price_input:,.2f}")
 col2.metric("מחיר יעד 2031", f"${f_price_neutral:,.2f}", f"{cagr_neutral:.1f}% CAGR")
 col3.metric("שווי הוגן היום", f"${fair_today:,.2f}", f"{mos:.1f}% Margin")
 
-st.markdown(f"### המלצה: :{rec_color}[{recommendation}]")
+st.markdown(f"### המלצה: {recommendation}")
 
 # טבלת תרחישים
 st.write("---")

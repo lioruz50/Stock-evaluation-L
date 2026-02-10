@@ -7,7 +7,6 @@ from io import BytesIO
 # --- 1. פונקציות עזר ---
 
 def format_large_number(n):
-    """ממיר מספר במיליונים לתצוגה של מיליארד (B) או מיליון (M)"""
     if n >= 1000:
         return f"{n/1000:.2f}B"
     return f"{n:.2f}M"
@@ -53,7 +52,7 @@ if not st.session_state["password_correct"]:
     st.stop()
 
 # --- 3. משיכת נתונים ---
-st.title("🚀 מודל הערכת שווי חכם")
+st.title("🚀 מודל הערכת שווי והשוואה")
 
 ticker = st.text_input("🔍 הזן סימול מניה (Ticker):", value="GOOGL").upper()
 
@@ -63,9 +62,8 @@ if st.button("משוך נתונים עדכניים"):
         if data:
             st.session_state['stock_data'] = data
         else:
-            st.error("❌ לא נמצאו נתונים. וודא שהסימול נכון.")
+            st.error("❌ לא נמצאו נתונים.")
 
-# נתוני ברירת מחדל
 current_data = st.session_state.get('stock_data', {
     "name": "Google", "price": 160.0, "market_cap": 2000000.0, 
     "revenue": 307000.0, "currency": "USD", "pe_ratio": 25.0
@@ -73,52 +71,58 @@ current_data = st.session_state.get('stock_data', {
 
 st.header(f"ניתוח עבור: {current_data['name']}")
 
-# --- 4. סרגל צד משולב ---
-st.sidebar.header("⚙️ פרמטרים להערכת שווי")
-
-# בחירת מכפיל יעד
-target_pe = st.sidebar.number_input("מכפיל רווח יעד (Target P/E)", 
-                                    value=float(current_data['pe_ratio']), step=1.0)
-
-# פרמטרים נוספים
+# --- 4. סרגל צד ---
+st.sidebar.header("⚙️ פרמטרים להערכה")
+target_pe = st.sidebar.number_input("מכפיל רווח יעד (P/E)", value=float(current_data['pe_ratio']), step=1.0)
 growth_rate = st.sidebar.slider("צמיחה שנתית (%)", 0, 50, 12) / 100
 profit_margin = st.sidebar.slider("שולי רווח נקי (%)", 0, 50, 25) / 100
 discount_rate = st.sidebar.slider("שיעור היוון (WACC) %", 5, 20, 12) / 100
 
 st.sidebar.markdown("---")
-st.sidebar.header("📝 נתוני בסיס (משיכה אוטומטית)")
+st.sidebar.header("📝 נתוני בסיס")
+rev_input = st.sidebar.number_input("הכנסות (במיליונים)", value=float(current_data['revenue']))
+mc_input = st.sidebar.number_input("שווי שוק (במיליונים)", value=float(current_data['market_cap']))
+price_input = st.sidebar.number_input("מחיר מניה", value=float(current_data['price']))
 
-# הצגת הנתונים שנמשכו בצורה קריאה (B/M)
-st.sidebar.info(f"הכנסות (רשת): {format_large_number(current_data['revenue'])}")
-st.sidebar.info(f"שווי שוק (רשת): {format_large_number(current_data['market_cap'])}")
-
-# שדות עריכה ידניים
-rev_input = st.sidebar.number_input("ערוך הכנסות (במיליונים)", value=float(current_data['revenue']))
-mc_input = st.sidebar.number_input("ערוך שווי שוק (במיליונים)", value=float(current_data['market_cap']))
-price_input = st.sidebar.number_input("ערוך מחיר מניה", value=float(current_data['price']))
-
-# --- 5. חישובים ---
+# --- 5. חישובים ותרחישים ---
 years = 5
 future_rev = rev_input * ((1 + growth_rate) ** years)
 future_profit = future_rev * profit_margin
 num_shares = mc_input / price_input if price_input > 0 else 1
 
-f_mc = future_profit * target_pe
-f_price = f_mc / num_shares
-fair_today = f_price / ((1 + discount_rate) ** years)
-mos = (fair_today - price_input) / price_input * 100
+multiples = [target_pe * 0.8, target_pe, target_pe * 1.2]
+results = []
 
-# --- 6. תצוגת תוצאות ---
-st.subheader("📊 סיכום הערכה")
-c1, c2, c3 = st.columns(3)
-c1.metric("מחיר נוכחי", f"${price_input:,.2f}")
-c2.metric("שווי הוגן היום", f"${fair_today:,.2f}")
-c3.metric("מרווח ביטחון", f"{mos:.1f}%")
+for m in multiples:
+    f_mc = future_profit * m
+    f_price = f_mc / num_shares
+    fair_today = f_price / ((1 + discount_rate) ** years)
+    mos = (fair_today - price_input) / price_input * 100
+    
+    # חישוב CAGR (תשואה שנתית ממוצעת מהמחיר הנוכחי למחיר העתידי)
+    if price_input > 0 and f_price > 0:
+        cagr = ((f_price / price_input) ** (1/years) - 1) * 100
+    else:
+        cagr = 0
+        
+    results.append({
+        "תרחיש": "שמרני" if m < target_pe else ("אופטימי" if m > target_pe else "יעד"),
+        "מכפיל": round(m, 1),
+        "מחיר צפוי 2031": f_price,
+        "שווי הוגן היום": fair_today,
+        "מרווח ביטחון": f"{mos:.1f}%",
+        "תשואה שנתית (CAGR)": f"{cagr:.1f}%"
+    })
 
-# תצוגת הרווח הנקי העתידי בקיצורים חכמים
-st.write(f"💰 **רווח נקי צפוי בעוד 5 שנים:** {format_large_number(future_profit)}")
+# --- 6. תצוגה ---
+st.subheader("📊 תרחישי שווי ומחיר יעד")
+df_results = pd.DataFrame(results)
+st.table(df_results.style.format({
+    "מחיר צפוי 2031": "{:,.2f}$",
+    "שווי הוגן היום": "{:,.2f}$"
+}))
+
+st.info(f"💰 **רווח נקי צפוי (2031):** {format_large_number(future_profit)}")
 
 st.sidebar.markdown("---")
-# ייצור QR למעבר מהיר
-qr_img = gen_qr("https://share.streamlit.io/") 
-st.sidebar.image(qr_img, caption="סרוק למעבר למובייל")
+st.sidebar.image(gen_qr("https://share.streamlit.io/"), caption="סרוק למעבר למובייל")
